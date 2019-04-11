@@ -1,8 +1,8 @@
-# !!!! Forked from source code https://github.com/meiqua/patch_linemod 
-# !!!! Original Author : [Chinese blog](https://zhuanlan.zhihu.com/p/45538349)
+#### !!!! Forked from source code https://github.com/meiqua/patch_linemod 
+#### !!!! Original Author : [Chinese blog](https://zhuanlan.zhihu.com/p/45538349)
 
-# Update the kmeans part in patch linemod procedure with tsne and other clustering efforts.
-# Update by: Tielin Zhang and Yangyang in CASIA
+#### Update the kmeans part in patch linemod procedure with tsne and other clustering efforts.
+#### Update by: Tielin Zhang and Yangyang in CASIA
 
 ## prerequisite
 
