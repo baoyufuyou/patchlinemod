@@ -4,6 +4,7 @@
 #include <opencv2/rgbd.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
+using namespace cv;
 
 class poseRefine{
 public:
@@ -26,11 +27,14 @@ struct Feature {
     int y;
     int label;
     int cluster;
+    double angle;
+    double magnitude;
 
     void read(const cv::FileNode& fn);
     void write(cv::FileStorage& fs) const;
 
-    Feature() : x(0), y(0), label(0), cluster(0) {}
+    Feature() : x(0), y(0), label(0), cluster(0), angle(0),magnitude(0)  {}
+    // Feature() : x(0), y(0), label(0), cluster(0)  {}
     Feature(int x, int y, int label);
 };
 inline Feature::Feature(int _x, int _y, int _label) : x(_x), y(_y), label(_label) {}
@@ -44,6 +48,7 @@ struct Template
     int pyramid_level;
     int clusters;
     std::vector<Feature> features;
+
 
     void read(const cv::FileNode& fn);
     void write(cv::FileStorage& fs) const;
@@ -82,6 +87,9 @@ public:
     virtual void pyrDown() =0;
 
     virtual void crop_by_mask(const cv::Mat& mask_crop, const cv::Rect& bbox) = 0;
+
+    Mat angle;       //thomas
+    Mat magnitude;  // thomas
 
 protected:
     /// Candidate feature with a score
@@ -297,6 +305,9 @@ public:
 
     std::vector<int> addTemplate(const std::vector<cv::Mat>& sources, const std::string& class_id,
                                  const cv::Mat& object_mask, const std::vector<int>& dep_anchors = std::vector<int>());
+
+    // thomas added
+    void cropTemplates(std::vector<Template> &templates, int clusters);
 
     /**
    * \brief Get the modalities used by this detector.

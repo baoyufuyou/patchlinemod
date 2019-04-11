@@ -9,7 +9,7 @@
 using namespace std;
 using namespace cv;
 
-static std::string prefix = "/home/meiqua/patch_linemod/linemodLevelup/test/case1/";
+static std::string prefix = "/home/casia/patch_linemod/linemodLevelup/test/case1/";
 // for test
 std::string type2str(int type) {
   std::string r;
@@ -34,8 +34,8 @@ std::string type2str(int type) {
   return r;
 }
 void train_test(){
-    Mat rgb = cv::imread("/home/meiqua/6DPose/linemodLevelup/test/869/rgb.png");
-    Mat depth = cv::imread("/home/meiqua/6DPose/linemodLevelup/test/869/depth.png", CV_LOAD_IMAGE_ANYCOLOR | CV_LOAD_IMAGE_ANYDEPTH);
+    Mat rgb = cv::imread("/home/casia/patch_linemod/linemodLevelup/test/869/rgb.png");
+    Mat depth = cv::imread("/home/casia/patch_linemod/linemodLevelup/test/869/depth.png", CV_LOAD_IMAGE_ANYCOLOR | CV_LOAD_IMAGE_ANYDEPTH);
 
     std::cout << type2str(depth.type());
 
@@ -142,7 +142,7 @@ void detect_test(){
 }
 
 void dataset_test(){
-    string pre = "/home/meiqua/6DPose/public/datasets/hinterstoisser/test/06/";
+    string pre = "/home/casia/patch_linemod/public/datasets/hinterstoisser/test/06/";
     int i=0;
     for(;i<1000;i++){
         auto i_str = to_string(i);
@@ -162,7 +162,7 @@ void dataset_test(){
         for(int dep: dep_anchors){
             classes.push_back("01_template_"+std::to_string(dep));
         }
-        detector.readClasses(classes, "/home/meiqua/6DPose/public/datasets/hinterstoisser/linemod_render_up/%s.yaml");
+        detector.readClasses(classes, "/home/casia/patch_linemod/public/datasets/hinterstoisser/linemod_render_up/%s.yaml");
 
         auto start_time = std::chrono::high_resolution_clock::now();
         vector<linemodLevelup::Match> matches = detector.match(sources, 70, 0.6f, classes, dep_anchors, dep_range);
@@ -224,7 +224,7 @@ void icp_test(){
 //    fs << "depth" << depth << "depth_ren" << depth_ren;
 
     cv::Mat depth, depth_ren;
-    FileStorage fs2("/home/meiqua/6DPose/linemodLevelup/test/case0/depth.yml", FileStorage::READ);
+    FileStorage fs2("/home/casia/patch_linemod/linemodLevelup/test/case0/depth.yml", FileStorage::READ);
     fs2["depth"] >> depth;
     fs2["depth_ren"] >> depth_ren;
 
@@ -248,7 +248,7 @@ void icp_with_depth_check_test(){
 //    fs << "depth" << depth << "depth_ren" << depth_ren;
 
     cv::Mat depth, depth_ren;
-    FileStorage fs2("/home/meiqua/6DPose/linemodLevelup/test/case0/depth.yml", FileStorage::READ);
+    FileStorage fs2("/home/casia/patch_linemod/linemodLevelup/test/case0/depth.yml", FileStorage::READ);
     fs2["depth"] >> depth;
     fs2["depth_ren"] >> depth_ren;
 
@@ -266,7 +266,7 @@ void icp_with_depth_check_test(){
 }
 
 void view_angle(){
-    cv::Mat circle = cv::imread("/home/meiqua/6DPose/linemodLevelup/test/circle.png");
+    cv::Mat circle = cv::imread("/home/casia/patch_linemod/linemodLevelup/test/circle.png");
     cv::cvtColor(circle, circle, CV_BGR2GRAY);
 
     cv::Mat sx, sy, angle;

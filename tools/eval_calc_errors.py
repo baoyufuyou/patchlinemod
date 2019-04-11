@@ -16,12 +16,12 @@ from params.dataset_params import get_dataset_params
 # Results for which the errors will be calculated
 #-------------------------------------------------------------------------------
 
-dataset = 'hinterstoisser'
+#dataset = 'hinterstoisser'
 # dataset = 'tless'
 # dataset = 'tudlight'
 # dataset = 'rutgers'
 # dataset = 'tejani'
-# dataset = 'doumanoglou'
+dataset = 'doumanoglou'
 # dataset = 'toyotalight'
 
 top_level_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -154,7 +154,7 @@ for result_path in result_paths:
                 R_e = est['R']
                 t_e = est['t']
 
-                errs_gts = {} # Errors w.r.t. GT poses of the same object
+                errs_gts = {} # Errors w.r.t. GT poses(realnumbers of pose in each image) of the same object
                 for gt_id, gt in enumerate(scene_gt[im_id]):
                     if gt['obj_id'] != obj_id:
                         continue

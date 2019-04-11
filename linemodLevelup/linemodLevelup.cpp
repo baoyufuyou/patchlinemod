@@ -9,7 +9,20 @@
 #include "Open3D/Core/Geometry/Image.h"
 #include "Open3D/Core/Camera/PinholeCameraIntrinsic.h"
 #include "Open3D/Core/Geometry/PointCloud.h"
-#include "Open3D/Visualization/Visualization.h"
+#include <unistd.h>
+#include <stdio.h>
+// thomas include
+
+#include <cfloat>
+#include <cmath>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+#include "tsne.h"
+#include <stdlib.h>
+
+//#include "Open3D/Visualization/Visualization.h"
 using namespace std;
 using namespace cv;
 
@@ -18,6 +31,9 @@ namespace linemodLevelup
 /**
  * \brief Get the label [0,8) of the single bit set in quantized.
  */
+//int quantized_unfiltered[][];
+//int magnitude[][];
+
 static inline int getLabel(int quantized)
 {
     switch (quantized)
@@ -45,9 +61,9 @@ static inline int getLabel(int quantized)
     }
 }
 
-void Feature::read(const FileNode &fn)
+void Feature::read(const FileNode &fn)     //fn ->node
 {
-    FileNodeIterator fni = fn.begin();
+    FileNodeIterator fni = fn.begin();    //FileNodeiterator open yaml files  find sequences and mappings
     fni >> x >> y >> label >> cluster;
 }
 
@@ -91,188 +107,7 @@ void Template::write(FileStorage &fs) const
     fs << "]"; // features
 }
 
-static Rect cropTemplates(std::vector<Template> &templates, int clusters)
-{
-    int min_x = std::numeric_limits<int>::max();
-    int min_y = std::numeric_limits<int>::max();
-    int max_x = std::numeric_limits<int>::min();
-    int max_y = std::numeric_limits<int>::min();
 
-    // First pass: find min/max feature x,y over all pyramid levels and modalities
-    for (int i = 0; i < (int)templates.size(); ++i)
-    {
-        Template &templ = templates[i];
-        templ.clusters = clusters;
-        for (int j = 0; j < (int)templ.features.size(); ++j)
-        {
-            int x = templ.features[j].x << templ.pyramid_level;
-            int y = templ.features[j].y << templ.pyramid_level;
-            min_x = std::min(min_x, x);
-            min_y = std::min(min_y, y);
-            max_x = std::max(max_x, x);
-            max_y = std::max(max_y, y);
-        }
-    }
-
-    /// @todo Why require even min_x, min_y?
-    if (min_x % 2 == 1)
-        --min_x;
-    if (min_y % 2 == 1)
-        --min_y;
-
-    // Second pass: set width/height and shift all feature positions
-    for (int i = 0; i < (int)templates.size(); ++i)
-    {
-        Template &templ = templates[i];
-        templ.width = (max_x - min_x) >> templ.pyramid_level;
-        templ.height = (max_y - min_y) >> templ.pyramid_level;
-        templ.tl_x = min_x >> templ.pyramid_level;
-        templ.tl_y = min_y >> templ.pyramid_level;
-
-        for (int j = 0; j < (int)templ.features.size(); ++j)
-        {
-            templ.features[j].x -= templ.tl_x;
-            templ.features[j].y -= templ.tl_y;
-        }
-    }
-
-    // third pass: cluster
-    bool debug_ = false;
-
-    for (int i = 0; i < (int)templates.size(); ++i)
-    {
-        Template &templ = templates[i];
-
-        cv::Mat show_templ;
-        if(debug_){// show template
-            show_templ = cv::Mat(templ.height+1, templ.width+1, CV_8UC3, cv::Scalar(0));
-            for(auto f: templ.features){
-                cv::circle(show_templ, {f.x, f.y}, 1, {0, 0, 255}, -1);
-            }
-            cv::imshow("templ", show_templ);
-            cv::waitKey(0);
-        }
-
-        // make sure one cluster has at least 4 features
-        const int min_num = 4;
-        if(templ.features.size() < templ.clusters*min_num){
-            templ.clusters = templ.features.size()/min_num;
-        }
-        if(templ.clusters == 0) templ.clusters = 1;
-
-        std::vector<std::vector<int>> k_means_cluster(templ.clusters);
-        std::vector<std::vector<int>> k_means_center(templ.clusters);
-        std::vector<std::vector<int>> k_means_center_last(templ.clusters);
-
-        // select K init samples
-        int steps = int(templ.features.size())/templ.clusters;
-        //        if(int(templ.features.size())%templ.clusters>0) steps++;
-        for(int j=0; j<templ.clusters; j++){
-            std::vector<int> center;
-            center.push_back(templ.features[j*steps].x);
-            center.push_back(templ.features[j*steps].y);
-            k_means_center[j] = center;
-        }
-
-        if(debug_){
-            for(auto c: k_means_center){
-                cv::circle(show_templ, {c[0], c[1]}, 1, {0, 255, 0}, -1);
-            }
-            cv::imshow("templ", show_templ);
-            cv::waitKey(0);
-        }
-
-        while(1){
-            k_means_center_last = k_means_center;
-            k_means_cluster.clear();
-            k_means_cluster.resize(templ.clusters);
-            // find cloest cluster
-            for (int j = 0; j < templ.features.size(); ++j)
-            {
-                float min_dist = std::numeric_limits<float>::max();
-                int closest_k = 0;
-                for(int k=0; k<templ.clusters; k++){
-                    float dx = (templ.features[j].x - k_means_center[k][0]);
-                    float dy = (templ.features[j].y - k_means_center[k][1]);
-                    float dist = dx*dx+dy*dy;
-                    if(dist<=min_dist){
-                        min_dist = dist;
-                        closest_k = k;
-                    }
-                }
-                auto& one_means = k_means_cluster[closest_k];
-                one_means.push_back(j);
-            }
-            // recaclulate center
-            for(int j=0; j<templ.clusters; j++){
-                std::vector<int> center(2, 0);
-                auto& one_means = k_means_cluster[j];
-
-                // k-means empty cluster, lucky to find it, an example:
-                // http://user.ceng.metu.edu.tr/~tcan/ceng465_f1314/Schedule/KMeansEmpty.html
-                if(one_means.empty()){
-                    one_means.push_back(rand()%templ.features.size());
-                }
-
-                for(auto idx: one_means){
-                    center[0] += templ.features[idx].x;
-                    center[1] += templ.features[idx].y;
-                }
-                center[0] /= int(one_means.size());
-                center[1] /= int(one_means.size());
-
-                k_means_center[j] = center;
-            }
-            if(k_means_center == k_means_center_last){
-                break;
-            }
-        }
-        for(int j=0; j<templ.clusters; j++){
-            auto& one_means = k_means_cluster[j];
-
-            assert(one_means.size() < 64 && "too many features for one cluster");
-
-            for(auto idx: one_means){
-                templ.features[idx].cluster = j;
-            }
-        }
-
-        if(debug_){
-            show_templ = cv::Mat(templ.height+1, templ.width+1, CV_8UC3, cv::Scalar(0));
-            std::vector<cv::Vec3b> color_list(templ.clusters);
-            for(auto& color: color_list){
-                // color list not too close
-                while (1) {
-                    bool break_flag = true;
-                    color = cv::Vec3b(rand()%255, rand()%255, rand()%255);
-                    for(auto& other: color_list){
-                        if(color == other) continue;
-                        int sum = 0;
-                        for(int i=0; i<3; i++){
-                            sum += std::abs(color[i] - other[i]);
-                        }
-                        sum /= 3;
-                        if(sum < 60){
-                            break_flag = false;
-                            break;
-                        }
-                    }
-                    if(break_flag){
-                        break;
-                    }
-                }
-            }
-
-            for(auto f: templ.features){
-                cv::circle(show_templ, {f.x, f.y}, 1, color_list[f.cluster], -1);
-            }
-            cv::imshow("templ", show_templ);
-            cv::waitKey(0);
-        }
-    }
-
-    return Rect(min_x, min_y, max_x - min_x, max_y - min_y);
-}
 
 bool QuantizedPyramid::selectScatteredFeatures(const std::vector<Candidate> &candidates,
                                                std::vector<Feature> &features,
@@ -327,7 +162,7 @@ Ptr<Modality> Modality::create(const std::string &modality_type)
 \****************************************************************************************/
 
 // Forward declaration
-void hysteresisGradient(Mat &magnitude, Mat &angle,
+void hysteresisGradient(Mat &magnitude, Mat &angle,             //zhihou
                         Mat &ap_tmp, float threshold);
 
 static void quantizedOrientations(const Mat &src, Mat &magnitude,
@@ -353,7 +188,7 @@ static void quantizedOrientations(const Mat &src, Mat &magnitude,
 
         // Allocate temporary buffers
         Size size = src.size();
-        Mat sobel_3dx;              // per-channel horizontal derivative
+        Mat sobel_3dx;              // per-channel horizontal derivative  shuiping
         Mat sobel_3dy;              // per-channel vertical derivative
         Mat sobel_dx(size, CV_32F); // maximum horizontal derivative
         Mat sobel_dy(size, CV_32F); // maximum vertical derivative
@@ -413,7 +248,7 @@ static void quantizedOrientations(const Mat &src, Mat &magnitude,
             ptrmg += length5;
         }
 
-        // Calculate the final gradient orientations
+        // Calculate the final gradient orientations   the gradient directions
         phase(sobel_dx, sobel_dy, sobel_ag, true);
         hysteresisGradient(magnitude, angle, sobel_ag, threshold * threshold);
     }
@@ -433,6 +268,13 @@ void hysteresisGradient(Mat &magnitude, Mat &quantized_angle,
     /// @todo is this necessary, or even correct?
     memset(quantized_unfiltered.ptr(), 0, quantized_unfiltered.cols);
     memset(quantized_unfiltered.ptr(quantized_unfiltered.rows - 1), 0, quantized_unfiltered.cols);
+    //-----------------------------------test-----------------------------------
+    // printf("===quantized_unfiltered.rows and clos====",quantized_unfiltered.rows," ",quantized_unfiltered.cols);
+    // sleep(2);  //2s
+
+
+
+
     // Zero out first and last columns
     for (int r = 0; r < quantized_unfiltered.rows; ++r)
     {
@@ -459,8 +301,13 @@ void hysteresisGradient(Mat &magnitude, Mat &quantized_angle,
 
         for (int c = 1; c < angle.cols - 1; ++c)
         {
-            if (mag_r[c] > threshold)
+
+            if (mag_r[c] > threshold)           //|gradient|>threshold step1    // thomas 
             {
+                
+                // printf("===========magnitude(above threshold)===========",mag_r[c]," ");
+                // sleep(2);  //2s
+
                 // Compute histogram of quantized bins in 3x3 patch around pixel
                 int histogram[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
@@ -492,9 +339,9 @@ void hysteresisGradient(Mat &magnitude, Mat &quantized_angle,
                 }
 
                 // Only accept the quantization if majority of pixels in the patch agree
-                static const int NEIGHBOR_THRESHOLD = 5;
+                static const int NEIGHBOR_THRESHOLD = 5;                //180 du /5 patch to make the gradient more clearly
                 if (max_votes >= NEIGHBOR_THRESHOLD)
-                    quantized_angle.at<uchar>(r, c) = uchar(1 << index);
+                    quantized_angle.at<uchar>(r, c) = uchar(1 << index);    //all the points->>feature points  ---- |gradient|>threshold and num_direction>5
             }
         }
     }
@@ -537,6 +384,7 @@ public:
         // don't know why, pass this pointer directly will erase this's data
         auto qd = makePtr<ColorGradientPyramid>(*this, mask_crop, bbox);
         return qd;}
+
 protected:
     /// Recalculate angle and magnitude images
     void update();
@@ -545,8 +393,7 @@ protected:
     Mat mask;
 
     int pyramid_level;
-    Mat angle;
-    Mat magnitude;
+    
 
     float weak_threshold;
     size_t num_features;
@@ -573,7 +420,7 @@ void ColorGradientPyramid::update()
 
 void ColorGradientPyramid::pyrDown()
 {
-    // Some parameters need to be adjusted
+    // Some parameters need to be adjusted   last level of pramid generate next level
     num_features /= 2; /// @todo Why not 4?
     ++pyramid_level;
 
@@ -640,7 +487,7 @@ bool ColorGradientPyramid::extractTemplate(Template &templ) const
             {
                 float score = 0;
                 if(magnitude_valid.at<uchar>(r, c)>0){
-                    score = magnitude.at<float>(r, c);
+                    score = magnitude.at<float>(r, c);              //score here
                     bool is_max = true;
                     for(int r_offset = -nms_kernel_size/2; r_offset <= nms_kernel_size/2; r_offset++){
                         for(int c_offset = -nms_kernel_size/2; c_offset <= nms_kernel_size/2; c_offset++){
@@ -666,7 +513,7 @@ bool ColorGradientPyramid::extractTemplate(Template &templ) const
 
                 if (score > threshold_sq && angle.at<uchar>(r, c) > 0)
                 {
-                    candidates.push_back(Candidate(c, r, getLabel(angle.at<uchar>(r, c)), score));
+                    candidates.push_back(Candidate(c, r, getLabel(angle.at<uchar>(r, c)), score));  // thomas, r,c, angle,
                 }
             }
         }
@@ -1251,25 +1098,25 @@ static void computeResponseMaps(const Mat &src, std::vector<Mat> &response_maps)
     CV_Assert((src.rows * src.cols) % 16 == 0);
 
     // Allocate response maps
-    response_maps.resize(8);
+    response_maps.resize(8);            //set the size of response_maps  element=8->directions
     for (int i = 0; i < 8; ++i)
-        response_maps[i].create(src.size(), CV_8U);
+        response_maps[i].create(src.size(), CV_8U);             //creat file for every direction
 
-    Mat lsb4(src.size(), CV_8U);
+    Mat lsb4(src.size(), CV_8U);            //normal 8bits img form
     Mat msb4(src.size(), CV_8U);
 
     for (int r = 0; r < src.rows; ++r)
     {
-        const uchar *src_r = src.ptr(r);
+        const uchar *src_r = src.ptr(r);        //address of row in img
         uchar *lsb4_r = lsb4.ptr(r);
         uchar *msb4_r = msb4.ptr(r);
 
         for (int c = 0; c < src.cols; ++c)
         {
-            // Least significant 4 bits of spread image pixel
-            lsb4_r[c] = src_r[c] & 15;
+            // Least significant(obvious) 4 bits of spread image pixel     xxxx xxxx(0000 000x ----x000 0000 eight direction)
+            lsb4_r[c] = src_r[c] & 15;            //  img raw for each column  c &and 00001111 ->clear the 0000 bite ,leave the 1111  
             // Most significant 4 bits, right-shifted to be in [0, 16)
-            msb4_r[c] = (src_r[c] & 240) >> 4;
+            msb4_r[c] = (src_r[c] & 240) >> 4;      // 1111 1111 the move right4-> leave the top4
         }
     }
 
@@ -1289,7 +1136,7 @@ static void computeResponseMaps(const Mat &src, std::vector<Mat> &response_maps)
             {
                 // Using SSE shuffle for table lookup on 4 orientations at a time
                 // The most/least significant 4 bits are used as the LUT index
-                __m128i res1 = _mm_shuffle_epi8(lut[2 * ori + 0], lsb4_data[i]);
+                __m128i res1 = _mm_shuffle_epi8(lut[2 * ori + 0], lsb4_data[i]);        //look up table
                 __m128i res2 = _mm_shuffle_epi8(lut[2 * ori + 1], msb4_data[i]);
 
                 // Combine the results into a single similarity score
@@ -1394,7 +1241,7 @@ static void similarity(std::vector<uint16_t> &cluster_counts, const std::vector<
 
     dst_vec.resize(templ.clusters);
     for(int i=0; i<templ.clusters; i++){
-        dst_vec[i] = Mat::zeros(H, W, CV_8U);
+        dst_vec[i] = Mat::zeros(H, W, CV_8U);    //creat black image
     }
     cluster_counts.resize(templ.clusters);
     std::fill(cluster_counts.begin(), cluster_counts.end(), 0);
@@ -1423,7 +1270,7 @@ static void similarity(std::vector<uint16_t> &cluster_counts, const std::vector<
         Feature f = templ.features[i];
 
         cluster_counts[f.cluster] += 1;
-        uchar *dst_ptr = dst_vec[f.cluster].ptr<uchar>();
+        uchar *dst_ptr = dst_vec[f.cluster].ptr<uchar>();    //f.cluster->simirities[][]
 
         // Discard feature if out of bounds
         /// @todo Shouldn't actually see x or y < 0 here?
@@ -1547,13 +1394,14 @@ Detector::Detector()
 {
     num_features = 16;
     std::vector<Ptr<Modality>> modalities;
-    modalities.push_back(makePtr<ColorGradient>(10.0f, num_features, 55.0f));
+    modalities.push_back(makePtr<ColorGradient>(10.0f, num_features, 55.0f));   //recall?
     modalities.push_back(makePtr<DepthNormal>(2000, 50, num_features, 2));
     this->modalities = modalities;
     pyramid_levels = 2;
     T_at_level.push_back(4);
     T_at_level.push_back(8);
     clusters = 16;
+    //clusters = 8;
 }
 
 Detector::Detector(std::vector<int> T, int clusters_)
@@ -1739,14 +1587,14 @@ std::vector<Match> Detector::match(const std::vector<Mat> &sources__, float thre
                                    const std::vector<Mat> &masks_ori)
 {
     std::vector<Match> matches_final;
-    CV_Assert(sources__.size() == modalities.size());
+    CV_Assert(sources__.size() == modalities.size());               //()false return error
 
     std::vector<Mat> sources;
     for(auto& src: sources__){  // crop to 32n
         int stride = 32;
         int n = src.rows/stride;
         int m = src.cols/stride;
-        Rect roi(0, 0, stride*m , stride*n);
+        Rect roi(0, 0, stride*m , stride*n);        //region of interest  x1 x2 y1 y2  according to modal_size(mask:white is non_0 )
         Mat img = src(roi).clone();
         assert(img.isContinuous());
         sources.push_back(img);
@@ -1821,7 +1669,7 @@ std::vector<Match> Detector::match(const std::vector<Mat> &sources__, float thre
             {
                 TemplatesMap::const_iterator it = class_templates.find(class_ids[i]);
                 if (it != class_templates.end())
-                    matchClass(lm_pyramid, sizes, threshold, active_ratio, matches, it->first, it->second);
+                    matchClass(lm_pyramid, sizes, threshold, active_ratio, matches, it->first, it->second);    //what
             }
         }
 
@@ -2031,14 +1879,14 @@ void Detector::matchClass(const LinearMemoryPyramid &lm_pyramid,
                     active_feat_num_1mod += active_unit/255*feat_count;
                 }
 
-                for (int r = 0; r < active_count_1mod.rows; ++r)
+                for (int r = 0; r < active_count_1mod.rows; ++r)                //score here? r!!!
                 {
                     ushort *raw_score = active_score_1mod.ptr<ushort>(r);
                     ushort *active_feats = active_feat_num_1mod.ptr<ushort>(r);
                     uchar* active_parts = active_count_1mod.ptr<uchar>(r);
 
                     float* nms_row = nms_candidates.ptr<float>(r);
-                    for (int c = 0; c < active_count_1mod.cols; ++c)
+                    for (int c = 0; c < active_count_1mod.cols; ++c)        //c!!!
                     {
                         float score = 100.0f/4*raw_score[c]/active_feats[c];
                         if (active_parts[c] > int(total_counts[i]*active_ratio - 0.001f) && active_parts[c] > 0 &&
@@ -2222,6 +2070,231 @@ void Detector::matchClass(const LinearMemoryPyramid &lm_pyramid,
     }
 }
 
+
+/////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////
+// static Rect cropTemplates(std::vector<Template> &templates, int clusters, Mat  angle, Mat  magnitudes)
+// thomas
+void Detector::cropTemplates(std::vector<Template> &templates, int clusters)
+{
+
+    int min_x = std::numeric_limits<int>::max();
+    int min_y = std::numeric_limits<int>::max();
+    int max_x = std::numeric_limits<int>::min();
+    int max_y = std::numeric_limits<int>::min();
+
+    // First pass: find min/max feature x,y over all pyramid levels and modalities
+    for (int i = 0; i < (int)templates.size(); ++i)
+    {
+        Template &templ = templates[i];
+        templ.clusters = clusters;
+        for (int j = 0; j < (int)templ.features.size(); ++j)
+        {
+            int x = templ.features[j].x << templ.pyramid_level;
+            int y = templ.features[j].y << templ.pyramid_level;
+            min_x = std::min(min_x, x);
+            min_y = std::min(min_y, y);
+            max_x = std::max(max_x, x);
+            max_y = std::max(max_y, y);
+        }
+    }
+
+    /// @todo Why require even min_x, min_y?
+    if (min_x % 2 == 1)
+        --min_x;
+    if (min_y % 2 == 1)
+        --min_y;
+
+    // Second pass: set width/height and shift all feature positions
+    for (int i = 0; i < (int)templates.size(); ++i)
+    {
+        Template &templ = templates[i];
+        templ.width = (max_x - min_x) >> templ.pyramid_level;
+        templ.height = (max_y - min_y) >> templ.pyramid_level;
+        templ.tl_x = min_x >> templ.pyramid_level;
+        templ.tl_y = min_y >> templ.pyramid_level;
+
+        for (int j = 0; j < (int)templ.features.size(); ++j)    //the lenth of features->vector xiangliang
+        {
+            templ.features[j].x -= templ.tl_x;
+            templ.features[j].y -= templ.tl_y;
+        }
+    }
+
+    //////
+
+    for (int i = 0; i < (int)templates.size(); ++i)
+        {
+            Template &templ = templates[i];
+            
+            // tsne inition
+            
+            int no_dims = 2;
+            double theta = 0.5;
+            int rand_seed = 0;
+            int max_iter = 1000;
+            int N = templ.features.size();
+            double perplexity = (N-4)/3;// 30
+            int D = 5;
+            double * data = (double*) malloc(N * D * sizeof(double));
+            // printf("here222\n");
+            // printf("N---%d\n",N);
+            for (int j = 0; j < N; j++)
+            {
+                int x = templ.features[j].x;
+                int y = templ.features[j].y;
+                int label = templ.features[j].label;
+                double angle = templ.features[j].angle;
+                double magnitude = templ.features[j].magnitude;
+                data[j*D+0] = x;
+                data[j*D+1] = y;
+                data[j*D+2] = label;
+                data[j*D+3] = angle;
+                data[j*D+4] = magnitude;
+                // printf("here333\n");
+           }
+
+            printf("start--tsne\n");
+            // processing tsne
+            int* landmarks = (int*) malloc(N * sizeof(int));
+            if(landmarks == NULL) { printf("Memory allocation failed!\n"); exit(1); }
+            for(int n = 0; n < N; n++) landmarks[n] = n;
+            // Now fire up the SNE implementation
+            double* Y = (double*) malloc(N * no_dims * sizeof(double));
+            double* costs = (double*) calloc(N, sizeof(double));
+            if(Y == NULL || costs == NULL) { printf("Memory allocation failed!\n"); exit(1); }
+            TSNE::run(data, N, D, Y, no_dims, perplexity, theta, rand_seed, false, max_iter, 250, 250);
+            // save Y, landmarks, cost
+            printf("start--kmeans\n");
+
+
+
+            // for (int j = 0; j < N; ++j){
+            //     // templ.features[j].x;
+            //     // templ.features[j].y;
+            //     templ.features[j].cluster = 0; //landmarks[j];
+            //     printf("landmarks printf:%d\n",landmarks[j]);
+
+            // }
+            // printf("end--print landmarks\n");
+
+
+            // kmeans, clustering
+            // make sure one cluster has at least 4 features           set cluster here!
+            const int min_num = 4;
+            if(templ.features.size() < templ.clusters*min_num)
+            {
+                templ.clusters = templ.features.size()/min_num;
+            }
+            if(templ.clusters == 0) templ.clusters = 1;
+
+            std::vector<std::vector<int>> k_means_cluster(templ.clusters);      //k-means = templ.clusters
+            std::vector<std::vector<int>> k_means_center(templ.clusters);
+            std::vector<std::vector<int>> k_means_center_last(templ.clusters);
+
+            // select K init samples
+            int steps = int(templ.features.size())/templ.clusters;
+            //        if(int(templ.features.size())%templ.clusters>0) steps++;
+            for(int j=0; j<templ.clusters; j++)
+            {
+                std::vector<int> center;
+                // center.push_back(templ.features[j*steps].x);
+                // center.push_back(templ.features[j*steps].y);
+                center.push_back(Y[j*steps*2+0]);
+                center.push_back(Y[j*steps*2+1]);
+                k_means_center[j] = center;
+            }
+
+            while(1)
+            {
+                k_means_center_last = k_means_center;
+                k_means_cluster.clear();
+                k_means_cluster.resize(templ.clusters);
+                // find cloest cluster
+                for (int j = 0; j < templ.features.size(); ++j)
+                {
+                    float min_dist = std::numeric_limits<float>::max();
+                    int closest_k = 0;
+                    for(int k=0; k<templ.clusters; k++)
+                    {
+                        // float dx = (templ.features[j].x - k_means_center[k][0]);
+                        // float dy = (templ.features[j].y - k_means_center[k][1]);
+                        float dx = (Y[j*2+0] - k_means_center[k][0]);
+                        float dy = (Y[j*2+1] - k_means_center[k][1]);
+                        float dist = dx*dx+dy*dy;
+                        if(dist<=min_dist)
+                        {
+                            min_dist = dist;
+                            closest_k = k;
+                        }
+                    }
+                auto& one_means = k_means_cluster[closest_k];
+                one_means.push_back(j);
+                }
+                // recaclulate center
+                for(int j=0; j<templ.clusters; j++)
+                {
+                    std::vector<int> center(2, 0); //templ.features[idx].cluster
+                    auto& one_means = k_means_cluster[j];
+
+                    // k-means empty cluster, lucky to find it, an example:
+                    // http://user.ceng.metu.edu.tr/~tcan/ceng465_f1314/Schedule/KMeansEmpty.html
+                    if(one_means.empty())
+                    {
+                        one_means.push_back(rand()%templ.features.size());
+                    }
+
+                    for(auto idx: one_means)
+                    {
+                        // center[0] += templ.features[idx].x;
+                        // center[1] += templ.features[idx].y;
+                        center[0] += Y[idx*2+0];
+                        center[1] += Y[idx*2+1];
+                    }
+                    center[0] /= int(one_means.size());
+                    center[1] /= int(one_means.size());
+
+                    k_means_center[j] = center;
+                }
+
+                // if(k_means_center == k_means_center_last)
+                // {
+                //     break;
+                // }
+
+                double sum = 0;
+                for(int j=0; j<templ.clusters; j++)
+                    for(int k=0;k<(int)k_means_center[0].size();k++)
+                    {
+                        sum += abs(k_means_center[j][k] -k_means_center_last[j][k]);
+                    }
+                if(sum<10) break;
+            }
+
+            for(int j=0; j<templ.clusters; j++)
+            {
+                auto& one_means = k_means_cluster[j];
+
+                assert(one_means.size() < 128 && "too many features for one cluster");  //cluster
+
+                for(auto idx: one_means)
+                {
+                    //j=j%templ.clusters    //0~temp.clusters
+                    //templ.features[idx].cluster = rand()%2;
+                    templ.features[idx].cluster = j;
+                }
+            }
+            printf("free\n");
+            // Clean up the memory
+            free(data); data = NULL;
+            free(Y); Y = NULL;
+            free(costs); costs = NULL;
+            free(landmarks); landmarks = NULL;
+        }
+
+}
+
+
 std::vector<int> Detector::addTemplate(const std::vector<Mat> &sources, const std::string &class_id,
                                        const Mat &object_mask, const std::vector<int>& dep_anchors)
 {
@@ -2238,29 +2311,72 @@ std::vector<int> Detector::addTemplate(const std::vector<Mat> &sources, const st
     for (int i = 0; i < num_modalities; ++i)
     {
         // Extract a template at each pyramid level
-        Ptr<QuantizedPyramid> qp = modalities[i]->process(sources, object_mask);
+        Ptr<QuantizedPyramid> qp = modalities[i]->process(sources, object_mask);       //QuantizedPyramid->ColorGradientPyramid
         for (int l = 0; l < pyramid_levels; ++l)
         {
             /// @todo Could do mask subsampling here instead of in pyrDown()
             if (l > 0)
                 qp->pyrDown();
 
-            bool success = qp->extractTemplate(tp[l * num_modalities + i]);
+            bool success = qp->extractTemplate(tp[l * num_modalities + i]);    
+            
             if (!success){
-                if(dep_anchors.size() == 0){
-                    successes.push_back(-1);
-                }else{
-                    for(int i=0; i<dep_anchors.size(); i++){
-                        successes.push_back(-1);
+                            if(dep_anchors.size() == 0)
+                            {
+                                successes.push_back(-1);
+                            }
+                            else{
+
+                                for(int i=0; i<dep_anchors.size(); i++)
+                                {
+                                    successes.push_back(-1);
+                                }
+                            }
+                            return successes;
+                        }
+
+
+            if (success){
+                // Thomas added, start
+                Template &current_template = tp[l * num_modalities + i];
+                // printf("thomas: features_size is :%d\n",(int)current_template.features.size());
+                for (int k=0; k < (int)current_template.features.size(); k++){
+                    // printf("thomas: k is :%d\n",k);
+                    int temx = current_template.features[k].x;
+                    int temy = current_template.features[k].y;
+                    // printf("thomas: x is :%d\n",current_template.features[k].x);
+                    // printf("thomas: y is :%d\n",current_template.features[k].y);
+                    if(qp->angle.rows==0){
+                        current_template.features[k].angle = 0;
+                        current_template.features[k].magnitude = 0;
+                        continue;
                     }
+                    else
+                    {
+                        // printf("thomas: angle_size_rows is :%d\n",qp->angle.rows);
+                        // printf("thomas: angle_size_col is :%d\n",qp->angle.cols);
+                        double angle = (int)qp->angle.at<uchar>(temx, temy);
+                        double magnitude = (int)qp->magnitude.at<uchar>(temx, temy);
+                        // printf("thomas: angle is :%f\n",angle);
+                        // printf("thomas: magnitude is :%f\n",magnitude);
+                        current_template.features[k].angle = angle;
+                        current_template.features[k].magnitude = magnitude;
+                    }
+                    
                 }
-                return successes;
             }
+            // Thomas added, end
+
         }
     }
     successes.push_back(template_id);
 
-    Rect bb = cropTemplates(tp, clusters);
+    // Rect bb = cropTemplates(tp, clusters ); 
+    printf("thoms: in : crop templates\n");
+    cropTemplates(tp, clusters );     // thomas: K-means
+    //*(qp->angle)
+  //  Rect sne = t_SNE(tp, clusters,);         //for combine
+
     template_pyramids.push_back(tp);
 
     if(dep_anchors.size() > 1){
@@ -2527,10 +2643,9 @@ void poseRefine::process(Mat &sceneDepth, Mat &modelDepth, Mat &sceneK, Mat &mod
 
     fitness = -1;
     inlier_rmse = -1;
-
     const bool dump = false;
     if(dump){  // for debug
-        FileStorage fs("/home/meiqua/6DPose/linemodLevelup/test/dump.yml", FileStorage::WRITE);
+        FileStorage fs("/home/casia/patch_linemod/linemodLevelup/test/dump.yml", FileStorage::WRITE);   //no file
         fs << "sceneDepth" << sceneDepth;
         fs << "modelDepth" << sceneDepth;
         fs << "sceneK" << sceneK;
@@ -2571,21 +2686,21 @@ void poseRefine::process(Mat &sceneDepth, Mat &modelDepth, Mat &sceneK, Mat &mod
     cv::Rect roi = cv::Rect(detectX, detectY, bbox.width, bbox.height);
     if((detectX + bbox.width >= sceneDepth.cols) || (detectY + bbox.height >= sceneDepth.rows)) return;
 
-    open3d::Image scene_depth_open3d, model_depth_open3d;
+    open3d::geometry::Image scene_depth_open3d, model_depth_open3d;
     model_depth_open3d.PrepareImage(modelDepth.cols, modelDepth.rows, 1, 2);
 
     std::copy_n(modelDepth.data, model_depth_open3d.data_.size(),
                 model_depth_open3d.data_.begin());
 
-    open3d::PinholeCameraIntrinsic K_scene_open3d(sceneDepth.cols, sceneDepth.rows,
+    open3d::camera::PinholeCameraIntrinsic K_scene_open3d(sceneDepth.cols, sceneDepth.rows,
                                                   double(sceneK.at<float>(0, 0)), double(sceneK.at<float>(1, 1)),
                                                   double(sceneK.at<float>(0, 2)), double(sceneK.at<float>(1, 2)));
 
-    open3d::PinholeCameraIntrinsic K_model_open3d(modelDepth.cols, modelDepth.rows,
+    open3d::camera::PinholeCameraIntrinsic K_model_open3d(modelDepth.cols, modelDepth.rows,
                                                   double(modelK.at<float>(0, 0)), double(modelK.at<float>(1, 1)),
                                                   double(modelK.at<float>(0, 2)), double(modelK.at<float>(1, 2)));
 
-    auto model_pcd = open3d::CreatePointCloudFromDepthImage(model_depth_open3d, K_model_open3d);
+    auto model_pcd = open3d::geometry::CreatePointCloudFromDepthImage(model_depth_open3d, K_model_open3d);
 
     Eigen::Matrix4d init_guess = Eigen::Matrix4d::Identity(4, 4);
 
@@ -2593,16 +2708,16 @@ void poseRefine::process(Mat &sceneDepth, Mat &modelDepth, Mat &sceneK, Mat &mod
     sceneDepth(roi).copyTo(scene_depth_model_cover(roi), modelMask(bbox));
     cv::medianBlur(scene_depth_model_cover, scene_depth_model_cover, 5);
 
-    open3d::Image scene_depth_for_center_estimation;
+    open3d::geometry::Image scene_depth_for_center_estimation;
     scene_depth_for_center_estimation.PrepareImage(scene_depth_model_cover.cols, scene_depth_model_cover.rows,
                                                    1, 2);
     std::copy_n(scene_depth_model_cover.data, scene_depth_for_center_estimation.data_.size(),
                 scene_depth_for_center_estimation.data_.begin());
-    auto scene_pcd_for_center = open3d::CreatePointCloudFromDepthImage(scene_depth_for_center_estimation, K_scene_open3d);
+    auto scene_pcd_for_center = open3d::geometry::CreatePointCloudFromDepthImage(scene_depth_for_center_estimation, K_scene_open3d);
 
     double voxel_size = 0.0025;
-    auto model_pcd_down = open3d::VoxelDownSample(*model_pcd, voxel_size);
-    auto scene_pcd_down = open3d::VoxelDownSample(*scene_pcd_for_center, voxel_size);
+    auto model_pcd_down = open3d::geometry::VoxelDownSample(*model_pcd, voxel_size);
+    auto scene_pcd_down = open3d::geometry::VoxelDownSample(*scene_pcd_for_center, voxel_size);
 
 //    auto model_pcd_down = open3d::UniformDownSample(*model_pcd, 5);
 //    auto scene_pcd_down = open3d::UniformDownSample(*scene_pcd_for_center, 5);
@@ -2630,16 +2745,16 @@ void poseRefine::process(Mat &sceneDepth, Mat &modelDepth, Mat &sceneK, Mat &mod
 
     const bool debug_ = false;
     if(debug_){
-        auto init_result = open3d::EvaluateRegistration(*model_pcd_down, *scene_pcd_down, threshold, init_guess);
+        auto init_result = open3d::registration::EvaluateRegistration(*model_pcd_down, *scene_pcd_down, threshold, init_guess);
         std::cout << "init_result.fitness_: " << init_result.fitness_ << std::endl;
         std::cout << "init_result.inlier_rmse_ : " << init_result.inlier_rmse_ << std::endl;
     }
 
-    open3d::EstimateNormals(*model_pcd_down);
-    open3d::EstimateNormals(*scene_pcd_down);
-    auto final_result = open3d::RegistrationICP(*model_pcd_down, *scene_pcd_down, threshold,
+    open3d::geometry::EstimateNormals(*model_pcd_down);
+    open3d::geometry::EstimateNormals(*scene_pcd_down);
+    auto final_result = open3d::registration::RegistrationICP(*model_pcd_down, *scene_pcd_down, threshold,
                                                 init_guess,
-                                                open3d::TransformationEstimationPointToPlane());
+                                                open3d::registration::TransformationEstimationPointToPlane());
 
     if(debug_){
         std::cout << "final_result.fitness_: " << final_result.fitness_ << std::endl;
@@ -2936,3 +3051,4 @@ Mat poseRefine::get_depth_edge(Mat &depth_)
 
     return dst;
 }
+

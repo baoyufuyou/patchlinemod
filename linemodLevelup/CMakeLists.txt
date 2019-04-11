@@ -10,12 +10,13 @@ SET(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -fopenmp")
 
 # opencv
 set(CUDA_TOOLKIT_ROOT_DIR /usr/local/cuda-8.0)
-set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} /home/meiqua/anaconda3/envs/furnace)
+# set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} /home/meiqua/anaconda3/envs/furnace) 
+set(CMAKE_PREFIX_PATH ${CMAKE_PREFIX_PATH} /usr/local/lib)
 find_package(OpenCV 3 REQUIRED)
 
 
 # open3d
-find_package(Open3D REQUIRED PATHS "~/Open3D/build/CMakeFiles")
+find_package(Open3D REQUIRED)
 if (Open3D_FOUND)
     message(STATUS "Found Open3D ${Open3D_VERSION}")
 
@@ -32,19 +33,24 @@ endif ()
 
 # pybind11
 find_package(PythonLibs 3 REQUIRED)
-find_package(pybind11 REQUIRED)
+find_package(pybind11 REQUIRED PATHS "/home/casia/pybind11/build" CMAKE_CURRENT_LIST_DIR "/home/casia/pybind11/build") 
 include(Cmake/FindNumPy.cmake)
+
+set(TSNE_DIR /home/casia/patch_linemod/linemodLevelup/tsnecpp)
 
 
 include_directories(${INCLUDE_DIRECTORIES} ${OpenCV_INCLUDE_DIRS}
-    ${PYTHON_INCLUDE_DIRS} ${PYTHON_NUMPY_INCLUDE_DIR})
+    ${PYTHON_INCLUDE_DIRS} ${PYTHON_NUMPY_INCLUDE_DIR} ${TSNE_DIR})
+
 
 set(SOURCE_PYBIND
     pybind11.cpp
     np2mat/ndarray_converter.cpp)
 
 set(SOURCE
-    linemodLevelup.cpp)
+    linemodLevelup.cpp
+    sptree.cpp
+    tsne.cpp)
 
 set(LIBS
     ${OpenCV_LIBS} ${Open3D_LIBRARIES})

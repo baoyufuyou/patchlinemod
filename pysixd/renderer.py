@@ -4,7 +4,7 @@
 # Renders rgb/depth image of a 3D mesh model.
 
 import numpy as np
-from glumpy import app, gloo, gl
+from glumpy import app, gloo, gl    #for scientific visualization
 
 # Set backend (http://glumpy.readthedocs.io/en/latest/api/app-backends.html)
 app.use('glfw')
@@ -147,11 +147,11 @@ void main() {
 #-------------------------------------------------------------------------------
 # Model-view matrix
 def _compute_model_view(model, view):
-    return np.dot(model, view)
+    return np.dot(model, view)        #matrix (model view) multiplicative
 
 # Model-view-projection matrix
 def _compute_model_view_proj(model, view, proj):
-    return np.dot(np.dot(model, view), proj)
+    return np.dot(np.dot(model, view), proj)    #projection(predict)
 
 # Normal matrix (Ref: http://www.songho.ca/opengl/gl_normaltransform.html)
 def _compute_normal_matrix(model, view):

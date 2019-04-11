@@ -10,60 +10,62 @@ from params.dataset_params import get_dataset_params
 from os.path import join
 import copy
 import linemodLevelup_pybind
-
+import ipdb
 from pysixd import renderer
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def draw_axis(img, R, t, K):
-    # unit is mm
+    # unit is mm 
+    #draw the line in results R(rodrigues bianhuan) t(position) K = dp['cam']['K'] (K-means?)
     rotV, _ = cv2.Rodrigues(R)
-    points = np.float32([[100, 0, 0], [0, 100, 0], [0, 0, 100], [0, 0, 0]]).reshape(-1, 3)
-    axisPoints, _ = cv2.projectPoints(points, rotV, t, K, (0, 0, 0, 0))
-    img = cv2.line(img, tuple(axisPoints[3].ravel()), tuple(axisPoints[0].ravel()), (255,0,0), 3)
+    points = np.float32([[100, 0, 0], [0, 100, 0], [0, 0, 100], [0, 0, 0]]).reshape(-1, 3)  #-1 raw depends the column
+    axisPoints, _ = cv2.projectPoints(points, rotV, t, K, (0, 0, 0, 0))  #the pose position transfer to image
+    img = cv2.line(img, tuple(axisPoints[3].ravel()), tuple(axisPoints[0].ravel()), (255,0,0), 3) #tuple define shuzu ;ravel()transfer to line1
     img = cv2.line(img, tuple(axisPoints[3].ravel()), tuple(axisPoints[1].ravel()), (0,255,0), 3)
     img = cv2.line(img, tuple(axisPoints[3].ravel()), tuple(axisPoints[2].ravel()), (0,0,255), 3)
     return img
 
 def nms(dets, thresh):
+    #non maximum suppression 
     x1 = dets[:, 0]
     y1 = dets[:, 1]
     x2 = dets[:, 2]
-    y2 = dets[:, 3]
-    scores = dets[:, 4]
+    y2 = dets[:, 3] #difine the box position
+    scores = dets[:, 4]  #order the scores
 
     areas = (x2 - x1 + 1) * (y2 - y1 + 1)
-    order = scores.argsort()[::-1]
+    order = scores.argsort()[::-1]  #minimum to maximum
 
     keep = []
     while order.size > 0:
-        i = order[0]
-        keep.append(i)
-        xx1 = np.maximum(x1[i], x1[order[1:]])
+        i = order[0]  #the minimum score
+        keep.append(i)   #add the i to keep[] end
+        xx1 = np.maximum(x1[i], x1[order[1:]])       #copare and pick the max score position
         yy1 = np.maximum(y1[i], y1[order[1:]])
         xx2 = np.minimum(x2[i], x2[order[1:]])
         yy2 = np.minimum(y2[i], y2[order[1:]])
 
-        w = np.maximum(0.0, xx2 - xx1 + 1)
-        h = np.maximum(0.0, yy2 - yy1 + 1)
-        inter = w * h
-        ovr = inter / (areas[i] + areas[order[1:]] - inter)
+        w = np.maximum(0.0, xx2 - xx1 + 1)      #width
+        h = np.maximum(0.0, yy2 - yy1 + 1)      #height
+        inter = w * h                           #area
+        ovr = inter / (areas[i] + areas[order[1:]] - inter)    #compare real area(may be occlused) and model area
 
-        inds = np.where(ovr <= thresh)[0]
-        order = order[inds + 1]
+        inds = np.where(ovr <= thresh)[0]      #thresh is the value that allowed to occlusion
+        order = order[inds + 1]                #list the score(delete scores the over thresh)
 
-    return keep
+    return keep              #the score list
 
-dataset = 'hinterstoisser'
+#dataset = 'hinterstoisser'
 # dataset = 'tless'
 # dataset = 'tudlight'
 # dataset = 'rutgers'
 # dataset = 'tejani'
-# dataset = 'doumanoglou'
+dataset = 'doumanoglou'
 # dataset = 'toyotalight'
 
-# mode = 'render_train'
-mode = 'test'
+mode = 'render_train'
+#mode = 'test'
 
 dp = get_dataset_params(dataset)
 detector = linemodLevelup_pybind.Detector(16, [4, 8], 16)  # min features; pyramid strides; num clusters
@@ -257,7 +259,7 @@ if mode == 'render_train':
                 # depth = render(model, dp['cam']['im_size'], dp['cam']['K'],
                 #                view['R'], view['t'],
                 #                clip_near, clip_far, mode='depth')
-
+                
                 mat_view = np.eye(4, dtype=np.float32)  # From world space to eye space
                 mat_view[:3, :3] = view['R']
                 mat_view[:3, 3] = view['t'].squeeze()
@@ -426,7 +428,8 @@ if mode == 'render_train':
                         cv2.imshow('mask', mask)
                         cv2.waitKey(1)
 
-                    success = detector.addTemplate([rgb, depth], '{:02d}_template_{}'.format(obj_id, radius), mask, [])
+                    # ipdb.set_trace()
+                    success = detector.addTemplate([rgb, depth], '{:02d}_template_{}'.format(obj_id, radius), mask, [])   ## thomas: add templte kmeans
                     print('success {}'.format(success[0]))
 
                     del rgb, depth, mask
