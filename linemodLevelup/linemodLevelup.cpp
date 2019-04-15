@@ -1400,8 +1400,8 @@ Detector::Detector()
     pyramid_levels = 2;
     T_at_level.push_back(4);
     T_at_level.push_back(8);
-    clusters = 16;
-    //clusters = 8;
+    //clusters = 16;
+    clusters = 8;
 }
 
 Detector::Detector(std::vector<int> T, int clusters_)
@@ -2275,7 +2275,7 @@ void Detector::cropTemplates(std::vector<Template> &templates, int clusters)
             {
                 auto& one_means = k_means_cluster[j];
 
-                assert(one_means.size() < 128 && "too many features for one cluster");  //cluster
+                assert(one_means.size() < 128 && "too many features for one cluster");  //cluster8 size 64
 
                 for(auto idx: one_means)
                 {

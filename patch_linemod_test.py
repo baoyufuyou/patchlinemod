@@ -64,11 +64,11 @@ def nms(dets, thresh):
 dataset = 'doumanoglou'
 # dataset = 'toyotalight'
 
-mode = 'render_train'
-#mode = 'test'
+#mode = 'render_train'
+mode = 'test'
 
 dp = get_dataset_params(dataset)
-detector = linemodLevelup_pybind.Detector(16, [4, 8], 16)  # min features; pyramid strides; num clusters
+detector = linemodLevelup_pybind.Detector(16, [4, 8], 8)  # min features; pyramid strides; num clusters
 
 obj_ids = []  # for each obj
 obj_ids_curr = range(1, dp['obj_count'] + 1)
@@ -906,6 +906,13 @@ if mode == 'test':
                     cv2.imshow('depth_edge', depth_edge)
                     cv2.imshow('rgb_top1', rgb)
                     cv2.imshow('rgb_render', render_rgb)
+                    
+                    #image write
+                    print('scene: {}, im: {} image_write:'.format(scene_id, im_id))
+                    cv2.imwrite('/home/casia/patch_linemod/test/scene{}/raw/im{}.jpg'.format(scene_id, im_id), raw_match_rgb)
+                    cv2.imwrite('/home/casia/patch_linemod/test/scene{}/depth_edge/im{}.jpg'.format(scene_id, im_id), depth_edge)
+                    cv2.imwrite('/home/casia/patch_linemod/test/scene{}/rgb_top1/im{}.jpg'.format(scene_id, im_id), rgb)
+                    cv2.imwrite('/home/casia/patch_linemod/test/scene{}/rgb_render/im{}.jpg'.format(scene_id, im_id), render_rgb)
 
                     cv2.waitKey(10)
 

@@ -12,7 +12,7 @@ import glob
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pysixd import inout, pose_error, misc
 from params.dataset_params import get_dataset_params
-
+import ipdb
 # Results for which the errors will be calculated
 #-------------------------------------------------------------------------------
 
@@ -41,7 +41,7 @@ errors_mpath = pjoin(result_base, '..', '..', 'eval', '{result_name}',
 #-------------------------------------------------------------------------------
 # Top N pose estimates (with the highest score) to be evaluated for each
 # object in each image
-n_top = 1  # 0 = all estimates, -1 = given by the number of GT poses
+n_top = 0  # 0 = all estimates, -1 = given by the number of GT poses
 
 # Pose error function
 error_type = 'vsd' # 'vsd', 'adi', 'add', 'cou', 're', 'te'
@@ -102,6 +102,8 @@ for result_path in result_paths:
         scene_gt = inout.load_gt(dp['scene_gt_mpath'].format(scene_id))
 
         res_paths = sorted(glob.glob(os.path.join(scene_dir, '*.yml')))
+        # ipdb.set_trace()
+
         errs = []
         im_id = -1
         depth_im = None
@@ -166,7 +168,8 @@ for result_path in result_paths:
                     if error_type == 'vsd':
                         e = pose_error.vsd(R_e, t_e, R_g, t_g, models[obj_id],
                                            depth_im, K, vsd_delta, vsd_tau,
-                                           vsd_cost)
+                                           vsd_cost)                    #error and accuracy
+                        # ipdb.set_trace()
                     elif error_type == 'add':
                         e = pose_error.add(R_e, t_e, R_g, t_g, models[obj_id])
                     elif error_type == 'adi':

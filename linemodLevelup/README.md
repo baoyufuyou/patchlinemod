@@ -4,6 +4,12 @@
 This software package contains a Barnes-Hut implementation of the t-SNE algorithm. The implementation is described in [this paper](http://lvdmaaten.github.io/publications/papers/JMLR_2014.pdf).
 
 
+linemodLevelup_origin.cpp -> max cluster=16 size=64 without tSNE or Kmeans
+linemodLevelup.cpp ->max cluster=8 size=128 tSNE
+linemodLevelup_old.cpp ->max cluster=8 size=128 Kmeans
+
+
+
 # Installation #
 
 On Linux or OS X, compile the source using the following command:

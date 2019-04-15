@@ -18,6 +18,7 @@ from os.path import join as pjoin
 import sys
 from collections import defaultdict
 import numpy as np
+import ipdb
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from pysixd import inout, pose_matching
@@ -84,6 +85,13 @@ def calc_recall(tp_count, targets_count):
     else:
         return tp_count / float(targets_count)
 
+def calc_acc(tp_count, tn_count):
+    if tp_count+tn_count < 1:
+        return 0.0
+    else:
+        return tp_count / float(tp_count+tn_count)
+
+
 
 def calc_scores(scene_ids, obj_ids, matches, n_top, do_print=True):
 
@@ -92,7 +100,6 @@ def calc_scores(scene_ids, obj_ids, matches, n_top, do_print=True):
     for m in matches:
         if m['valid']:
             insts[m['obj_id']][m['scene_id']][m['im_id']] += 1
-
     # Count the number of targets = object instances to be found
     # (e.g. for 6D localization of a single instance of a single object, there
     # is either zero or one target in each image - there is just one even if
@@ -113,16 +120,42 @@ def calc_scores(scene_ids, obj_ids, matches, n_top, do_print=True):
             obj_tars[obj_id] += count
             scene_tars[scene_id] += count
 
-    # Count the number of true positives
+    ########acc and recall for mean in scene and obj
     tps = 0 # Total number of true positives
     obj_tps = {i: 0 for i in obj_ids} # True positives per object
     scene_tps = {i: 0 for i in scene_ids} # True positives per scene
-    for m in matches:
-        if m['valid'] and m['est_id'] != -1:
-            tps += 1
-            obj_tps[m['obj_id']] += 1
-            scene_tps[m['scene_id']] += 1
 
+    tns = 0 # total number of true negatives
+    obj_tns = {i: 0 for i in obj_ids} # True negatives per object
+    scene_tns = {i: 0 for i in scene_ids} # True negatives per scene
+    for m in matches:
+        if m['valid']:
+            if m['est_id'] != -1:
+                tps += 1
+                obj_tps[m['obj_id']] += 1
+                scene_tps[m['scene_id']] += 1
+            else:
+                tns += 1
+                obj_tns[m['obj_id']] += 1
+                scene_tns[m['scene_id']] += 1
+
+    ###### acc and recall for each images in each scenes
+    scenes_imgs_tps = [[0 for i in range(num)] for num in [56,60,61]]
+    scenes_imgs_tns = [[0 for i in range(num)] for num in [56,60,61]]
+    scenes_imgs_posall = [[0 for i in range(num)] for num in [56,60,61]]
+    for m in matches:
+        if m['valid']:
+            sceneid = m['scene_id']-1 # start from 1
+            imgid = m['im_id']        # start from 0
+            scenes_imgs_posall[sceneid][imgid] +=1
+            if m['est_id'] != -1:
+                tar_id = sceneid
+                scenes_imgs_tps[sceneid][imgid] +=1 
+            else:
+                scenes_imgs_tns[sceneid][imgid] +=1 
+
+
+    ##############################Recall part
     # Total recall
     total_recall = calc_recall(tps, tars)
 
@@ -136,7 +169,25 @@ def calc_scores(scene_ids, obj_ids, matches, n_top, do_print=True):
     scene_recalls = {}
     for i in scene_ids:
         scene_recalls[i] = calc_recall(scene_tps[i], scene_tars[i])
+    # ipdb.set_trace()
     mean_scene_recall = float(np.mean(list(scene_recalls.values())).squeeze())
+
+    ##############################Accuracy part
+      # Total acc
+    total_acc = calc_acc(tps, tns)
+
+    # Recall per object
+    obj_accs = {}
+    for i in obj_ids:
+        obj_accs[i] = calc_acc(obj_tps[i], obj_tns[i])
+    mean_obj_acc = float(np.mean(list(obj_accs.values())).squeeze())
+
+    # Recall per scene
+    scene_accs = {}
+    for i in scene_ids:
+        scene_accs[i] = calc_recall(scene_tps[i], scene_tns[i])
+    mean_scene_acc = float(np.mean(list(scene_accs.values())).squeeze())
+    
 
     scores = {
         'total_recall': total_recall,
@@ -144,9 +195,19 @@ def calc_scores(scene_ids, obj_ids, matches, n_top, do_print=True):
         'mean_obj_recall': mean_obj_recall,
         'scene_recalls': scene_recalls,
         'mean_scene_recall': mean_scene_recall,
+        'total_acc': total_acc,
+        'obj_acc': obj_accs,
+        'mean_obj_acc': mean_obj_acc,
+        'scene_accs': scene_accs,
+        'mean_scene_acc': mean_scene_acc,
         'gt_count': len(matches),
         'targets_count': tars,
         'tp_count': tps,
+        'tn_count': tns,
+        'scenes_imgs_tps':scenes_imgs_tps,
+        'scenes_imgs_tns':scenes_imgs_tns,
+        'scenes_imgs_posall':scenes_imgs_posall,
+        'insts_totalrecall':float(list(insts.values())).squeeze(),
     }
 
     if do_print:
@@ -167,6 +228,15 @@ def calc_scores(scene_ids, obj_ids, matches, n_top, do_print=True):
         print('Mean scene recall:  {:.4f}'.format(scores['mean_scene_recall']))
         print('Object recalls:\n{}'.format(obj_recalls_str))
         print('Scene recalls:\n{}'.format(scene_recalls_str))
+        print('Total acc:       {:.4f}'.format(scores['total_acc']))
+        print('Mean object acc: {:.4f}'.format(scores['mean_obj_acc']))
+        print('Mean scene acc:  {:.4f}'.format(scores['mean_scene_acc']))
+        print('Object accs:\n{}'.format(obj_recalls_str))
+        print('Scene accs:\n{}'.format(scene_recalls_str))
+        print('scenes_imgs_tps:\n{}'.format(scenes_imgs_tps))
+        print('scenes_imgs_tns:\n{}'.format(scenes_imgs_tns))
+        print('scenes_imgs_posall:\n{}'.format(scenes_imgs_posall))
+        print('insts_totalrecall:\n{}'.format(insts))
         print('')
 
     return scores
@@ -191,7 +261,8 @@ def main():
         # pjoin(error_bpath, 'hodan-iros15_tless_primesense'),
     ]
 
-    error_dir = 'error=vsd_ntop=1_delta=15_tau=20_cost=step'
+    #error_dir = 'error=vsd_ntop=1_delta=15_tau=20_cost=step'
+    error_dir = 'error=vsd_ntop=0_delta=15_tau=20_cost=step'
     for i in range(len(error_paths)):
         error_paths[i] = os.path.join(error_paths[i], error_dir)
 
@@ -232,7 +303,11 @@ def main():
         # Parse info about the errors from the folder names
         error_sign = os.path.basename(error_path)
         error_type = error_sign.split('_')[0].split('=')[1]
+        ####!!! THOMAS, 
+        ### n_top = 1, get the toppest obj in the figure
+        ### n_top = N, get the first N objs in the figure
         n_top = int(error_sign.split('_')[1].split('=')[1])
+
         res_sign = os.path.basename(os.path.dirname(error_path)).split('_')
         method = res_sign[0]
         dataset = res_sign[1]
@@ -295,7 +370,7 @@ def main():
             # Load pre-calculated errors of the pose estimates
             scene_errs_path = errors_mpath.format(
                 error_path=error_path, scene_id=scene_id)
-
+            # ipdb.set_trace()
             if os.path.isfile(scene_errs_path):
                 errs = inout.load_errors(scene_errs_path)
 
@@ -346,16 +421,19 @@ def main():
                 error_path=error_path, eval_sign=eval_sign_occ)
             inout.save_yaml(matches_path, matches_occ)
         else:
+            #ipdb.set_trace()
             scores = calc_scores(scene_ids, obj_ids, matches, n_top)
 
             # Save scores
             scores_path = scores_mpath.format(
                 error_path=error_path, eval_sign=eval_sign)
+            print('savescores in :' + scores_path)
             inout.save_yaml(scores_path, scores)
 
             # Save matches
             matches_path = matches_mpath.format(
                 error_path=error_path, eval_sign=eval_sign)
+            print('matches_path in :' + matches_path)
             inout.save_yaml(matches_path, matches)
 
     print('Done.')
